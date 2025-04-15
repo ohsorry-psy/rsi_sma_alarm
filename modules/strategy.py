@@ -10,7 +10,11 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 SEND_ALERT = os.getenv("SEND_ALERT", "False") == "True"
 
-def run_strategy(symbol, start_date, end_date):
+def run_strategy(symbol, start_date, end_date, backtest=False):
+
+    if backtest:
+        print("📊 백테스트 모드로 실행 중입니다.")
+
     print("▶ 데이터 다운로드 시작")
     df = yf.download(symbol, start=start_date, end=end_date)
     print("✅ 데이터 다운로드 완료")
