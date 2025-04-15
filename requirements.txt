@@ -4,3 +4,4 @@ plotly
 pandas
 requests
 python-dotenv
+gunicorn
