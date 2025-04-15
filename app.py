@@ -1,67 +1,72 @@
-from flask import Flask, render_template, request
+import yfinance as yf
 import pandas as pd
-import plotly.graph_objects as go
-from modules.strategy import run_strategy
 import os
+from dotenv import load_dotenv
+from modules.telegram_alert import send_telegram_message
 
-app = Flask(__name__)
+# 🔐 환경 변수 로드
+load_dotenv()
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+SEND_ALERT = os.getenv("SEND_ALERT", "False") == "True"
 
-@app.route("/", methods=["GET", "POST"])
-def index():
-    trades_df = pd.DataFrame()
-    chart_html = ""
-    symbol = "064350.KS"
-    start_date = "2023-01-01"
-    end_date = "2024-12-31"
+def run_strategy(symbol, start_date, end_date):
+    print("▶ 데이터 다운로드 시작")
+    df = yf.download(symbol, start=start_date, end=end_date)
+    print("✅ 데이터 다운로드 완료")
 
-    if request.method == "POST":
-        print("📥 POST 요청 받음!")
-        symbol = request.form.get("symbol", symbol)
-        start_date = request.form.get("start_date", start_date)
-        end_date = request.form.get("end_date", end_date)
+    # 이동 평균선 계산
+    df["MA5"] = df["Close"].rolling(window=5).mean()
+    df["MA10"] = df["Close"].rolling(window=10).mean()
 
-        print(f"🔍 전략 실행: {symbol}, {start_date} ~ {end_date}")
-        df, trades_df = run_strategy(symbol, start_date, end_date)
-        print("✅ 전략 실행 완료")
+    # 매수/매도 시점 포착
+    df["Buy"] = (df["MA5"] > df["MA10"]) & (df["MA5"].shift(1) <= df["MA10"].shift(1))
+    df["Sell"] = (df["MA5"] < df["MA10"]) & (df["MA5"].shift(1) >= df["MA10"].shift(1))
 
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index, y=df["Close"],
-            mode="lines", name="Close Price", line=dict(color="black")
-        ))
+    print("▶ 전략 처리 시작")
+    trades = []
+    holding = False
+    buy_price = 0
 
-        if not trades_df.empty:
-            fig.add_trace(go.Scatter(
-                x=trades_df["Buy Date"], y=trades_df["Buy Price"],
-                mode="markers", name="Buy",
-                marker=dict(color="blue", size=10, symbol="triangle-up"),
-                hovertemplate="%{x|%Y-%m-%d}<br>📈 매수가: %{y:.2f}원<extra></extra>"
-            ))
-            fig.add_trace(go.Scatter(
-                x=trades_df["Sell Date"], y=trades_df["Sell Price"],
-                mode="markers", name="Sell",
-                marker=dict(color="red", size=10, symbol="triangle-down"),
-                hovertemplate="%{x|%Y-%m-%d}<br>📉 매도가: %{y:.2f}원<extra></extra>"
-            ))
+    for date, row in df.iterrows():
+        buy_signal = bool(row["Buy"]) if not pd.isna(row["Buy"]) else False
+        sell_signal = bool(row["Sell"]) if not pd.isna(row["Sell"]) else False
 
-        fig.update_layout(
-            title=f"{symbol} 전략 차트",
-            xaxis_title="날짜",
-            yaxis_title="종가 (원)",
-            hovermode="x unified",
-            template="plotly_white"
-        )
+        if not holding and buy_signal:
+            buy_price = row["Close"]
+            trade = {
+                "Buy Date": date,
+                "Buy Price": buy_price,
+                "Sell Date": pd.NaT,
+                "Sell Price": None,
+                "Return (%)": None
+            }
+            trades.append(trade)
+            holding = True
 
-        chart_html = fig.to_html(full_html=False)
+            # ✅ 매수 알림
+            if SEND_ALERT:
+                msg = f"📈 매수 신호 감지! [{symbol}] {date.date()} / 진입가: {buy_price:.2f}원"
+                send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, msg)
 
-    return render_template("index.html",
-                           chart_html=chart_html,
-                           trades=trades_df.to_dict(orient="records"),
-                           symbol=symbol,
-                           start_date=start_date,
-                           end_date=end_date)
+        elif holding and sell_signal:
+            sell_price = row["Close"]
+            trades[-1]["Sell Date"] = date
+            trades[-1]["Sell Price"] = sell_price
+            return_pct = ((sell_price - buy_price) / buy_price) * 100
+            trades[-1]["Return (%)"] = return_pct
+            holding = False
 
-if __name__ == "__main__":
-    debug_mode = os.environ.get("FLASK_DEBUG", "False") == "True"
-    print("🚀 Flask 서버 시작됨")
-    app.run(host="0.0.0.0", port=5000, debug=debug_mode)
+            # ✅ 매도 알림
+            if SEND_ALERT:
+                msg = f"📉 매도 완료! [{symbol}] {date.date()} / 매도가: {sell_price:.2f}원 / 수익률: {return_pct:.2f}%"
+                send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, msg)
+
+                # 🎯 수익률 10% 이상이면 별도 알림
+                if return_pct >= 10:
+                    send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID,
+                        f"🎯 목표 수익률 도달! +{return_pct:.2f}% 수익")
+
+    trades_df = pd.DataFrame(trades)
+    print("✅ 전략 처리 완료")
+    return df, trades_df

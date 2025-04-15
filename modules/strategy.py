@@ -24,31 +24,24 @@ def run_strategy(symbol, start_date, end_date):
     df["Sell"] = (df["MA5"] < df["MA10"]) & (df["MA5"].shift(1) >= df["MA10"].shift(1))
 
     print("▶ 전략 처리 시작")
-    trades_df = pd.DataFrame(index=df.index)
-    trades_df["Buy Date"] = pd.NaT
-    trades_df["Buy Price"] = None
-    trades_df["Sell Date"] = pd.NaT
-    trades_df["Sell Price"] = None
-    trades_df["Return (%)"] = None
-
+    trades = []
     holding = False
     buy_price = 0
 
     for date, row in df.iterrows():
-        try:
-            buy_signal = bool(row["Buy"])
-        except Exception:
-            buy_signal = False
-
-        try:
-            sell_signal = bool(row["Sell"])
-        except Exception:
-            sell_signal = False
+        buy_signal = bool(row["Buy"]) if not pd.isna(row["Buy"]) else False
+        sell_signal = bool(row["Sell"]) if not pd.isna(row["Sell"]) else False
 
         if not holding and buy_signal:
             buy_price = row["Close"]
-            trades_df.at[date, "Buy Date"] = date
-            trades_df.at[date, "Buy Price"] = buy_price
+            trade = {
+                "Buy Date": date,
+                "Buy Price": buy_price,
+                "Sell Date": pd.NaT,
+                "Sell Price": None,
+                "Return (%)": None
+            }
+            trades.append(trade)
             holding = True
 
             # ✅ 매수 알림
@@ -58,14 +51,14 @@ def run_strategy(symbol, start_date, end_date):
 
         elif holding and sell_signal:
             sell_price = row["Close"]
-            trades_df.at[date, "Sell Date"] = date
-            trades_df.at[date, "Sell Price"] = sell_price
-            trades_df.at[date, "Return (%)"] = ((sell_price - buy_price) / buy_price) * 100
+            trades[-1]["Sell Date"] = date
+            trades[-1]["Sell Price"] = sell_price
+            return_pct = ((sell_price - buy_price) / buy_price) * 100
+            trades[-1]["Return (%)"] = return_pct
             holding = False
 
             # ✅ 매도 알림
             if SEND_ALERT:
-                return_pct = ((sell_price - buy_price) / buy_price) * 100
                 msg = f"📉 매도 완료! [{symbol}] {date.date()} / 매도가: {sell_price:.2f}원 / 수익률: {return_pct:.2f}%"
                 send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, msg)
 
@@ -74,6 +67,6 @@ def run_strategy(symbol, start_date, end_date):
                     send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID,
                         f"🎯 목표 수익률 도달! +{return_pct:.2f}% 수익")
 
+    trades_df = pd.DataFrame(trades)
     print("✅ 전략 처리 완료")
     return df, trades_df
-
