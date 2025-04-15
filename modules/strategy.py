@@ -29,8 +29,8 @@ def run_strategy(symbol, start_date, end_date):
     buy_price = 0
 
     for date, row in df.iterrows():
-        buy_signal = bool(row["Buy"]) if not pd.isna(row["Buy"]) else False
-        sell_signal = bool(row["Sell"]) if not pd.isna(row["Sell"]) else False
+        buy_signal = bool(row["Buy"]) if pd.notnull(row["Buy"]) and not isinstance(row["Buy"], pd.Series) else False
+        sell_signal = bool(row["Sell"]) if pd.notnull(row["Sell"]) and not isinstance(row["Sell"], pd.Series) else False
 
         if not holding and buy_signal:
             buy_price = row["Close"]

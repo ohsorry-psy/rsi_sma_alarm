@@ -32,7 +32,7 @@ start_date = "2023-01-01"
 end_date = datetime.today().strftime("%Y-%m-%d")
 
 print(f"⏱ 자동 전략 실행 시작: {symbol} ({start_date} ~ {end_date})")
-df, trades_df = run_strategy(symbol, start_date, end_date)
+df, trades_df = run_strategy(symbol, start_date, end_date, backtest=True)
 print("📤 자동 전략 실행 완료")
 
 # ✅ 텔레그램 알림 전송
@@ -42,7 +42,7 @@ if os.getenv("SEND_ALERT", "False") == "True":
 
     if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
         result_message = format_trade_results(trades_df)
-        message = f"✅ 자동 실행 완료: {symbol}\n기간: {start_date} ~ {end_date}\n\n{result_message}"
+        message = f"✅ 자동 실행 완료: {symbol}\n📅 기간: {start_date} ~ {end_date}\n\n{result_message}"
         send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, message)
     else:
         print("⚠️ 텔레그램 토큰 또는 채팅 ID가 설정되지 않았습니다.")
