@@ -1,48 +1,76 @@
-from datetime import datetime
-import os
+import yfinance as yf
 import pandas as pd
-from dotenv import load_dotenv  # ✅ .env 파일 로딩을 위한 모듈 추가
-from modules.strategy import run_strategy
+import os
+from dotenv import load_dotenv
 from modules.telegram_alert import send_telegram_message
 
-# ✅ .env 파일에서 환경변수 불러오기
+# 🔐 환경 변수 로드
 load_dotenv()
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+SEND_ALERT = os.getenv("SEND_ALERT", "False") == "True"
 
-# 📊 결과 요약 메시지 포맷 함수
-def format_trade_results(trades_df):
-    if trades_df.empty:
-        return "❌ 거래 내역 없음"
+def run_strategy(symbol, start_date, end_date, backtest=False):
 
-    messages = []
-    total_profit = 0
-    for idx, row in trades_df.iterrows():
-        buy_date = row["Buy Date"].strftime("%Y-%m-%d") if pd.notna(row["Buy Date"]) else "-"
-        sell_date = row["Sell Date"].strftime("%Y-%m-%d") if pd.notna(row["Sell Date"]) else "-"
-        profit = row["Return (%)"] if pd.notna(row["Return (%)"]) else 0
-        total_profit += profit if isinstance(profit, (int, float)) else 0
-        messages.append(f"📅 {buy_date} ➡ {sell_date} | 수익률: {profit:.2f}%")
+    if backtest:
+        print("📊 백테스트 모드로 실행 중입니다.")
 
-    avg_profit = total_profit / len(trades_df)
-    summary = f"\n✅ 총 거래: {len(trades_df)}회 | 평균 수익률: {avg_profit:.2f}%"
-    return "\n".join(messages + [summary])
+    print("▶ 데이터 다운로드 시작")
+    df = yf.download(symbol, start=start_date, end=end_date)
+    print("✅ 데이터 다운로드 완료")
 
-# 한미반도체 예시 (042700.KQ)
-symbol = "042700.KQ"
-start_date = "2023-01-01"
-end_date = datetime.today().strftime("%Y-%m-%d")
+    # 이동 평균선 계산
+    df["MA5"] = df["Close"].rolling(window=5).mean()
+    df["MA10"] = df["Close"].rolling(window=10).mean()
 
-print(f"⏱ 자동 전략 실행 시작: {symbol} ({start_date} ~ {end_date})")
-df, trades_df = run_strategy(symbol, start_date, end_date, backtest=True)
-print("📤 자동 전략 실행 완료")
+    # 매수/매도 시점 포착
+    df["Buy"] = (df["MA5"] > df["MA10"]) & (df["MA5"].shift(1) <= df["MA10"].shift(1))
+    df["Sell"] = (df["MA5"] < df["MA10"]) & (df["MA5"].shift(1) >= df["MA10"].shift(1))
 
-# ✅ 텔레그램 알림 전송
-if os.getenv("SEND_ALERT", "False") == "True":
-    TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-    TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+    print("▶ 전략 처리 시작")
+    trades = []
+    holding = False
+    buy_price = 0
 
-    if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
-        result_message = format_trade_results(trades_df)
-        message = f"✅ 자동 실행 완료: {symbol}\n📅 기간: {start_date} ~ {end_date}\n\n{result_message}"
-        send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, message)
-    else:
-        print("⚠️ 텔레그램 토큰 또는 채팅 ID가 설정되지 않았습니다.")
+    for date, row in df.iterrows():
+        buy_signal = bool(row["Buy"]) if pd.notnull(row["Buy"]) and not isinstance(row["Buy"], pd.Series) else False
+        sell_signal = bool(row["Sell"]) if pd.notnull(row["Sell"]) and not isinstance(row["Sell"], pd.Series) else False
+
+        if not holding and buy_signal:
+            buy_price = row["Close"]
+            trade = {
+                "Buy Date": date,
+                "Buy Price": buy_price,
+                "Sell Date": pd.NaT,
+                "Sell Price": None,
+                "Return (%)": None
+            }
+            trades.append(trade)
+            holding = True
+
+            # ✅ 매수 알림
+            if SEND_ALERT:
+                msg = f"📈 매수 신호 감지! [{symbol}] {date.date()} / 진입가: {buy_price:.2f}원"
+                send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, msg)
+
+        elif holding and sell_signal:
+            sell_price = row["Close"]
+            trades[-1]["Sell Date"] = date
+            trades[-1]["Sell Price"] = sell_price
+            return_pct = ((sell_price - buy_price) / buy_price) * 100
+            trades[-1]["Return (%)"] = return_pct
+            holding = False
+
+            # ✅ 매도 알림
+            if SEND_ALERT:
+                msg = f"📉 매도 완료! [{symbol}] {date.date()} / 매도가: {sell_price:.2f}원 / 수익률: {return_pct:.2f}%"
+                send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, msg)
+
+                # 🎯 수익률 10% 이상이면 별도 알림
+                if return_pct >= 10:
+                    send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID,
+                        f"🎯 목표 수익률 도달! +{return_pct:.2f}% 수익")
+
+    trades_df = pd.DataFrame(trades)
+    print("✅ 전략 처리 완료")
+    return df, trades_df
