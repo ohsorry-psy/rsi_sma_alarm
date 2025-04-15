@@ -1,0 +1,6 @@
+flask
+yfinance
+plotly
+pandas
+requests
+python-dotenv

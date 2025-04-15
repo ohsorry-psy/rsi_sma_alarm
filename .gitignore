@@ -1,0 +1,15 @@
+# Python 기본 무시 항목
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.DS_Store
+
+# Jupyter, VS Code 등 개발환경 설정 무시
+.ipynb_checkpoints/
+.vscode/
+*.log
+
+# OS/패키지 빌드 캐시
+.env.*
+*.env

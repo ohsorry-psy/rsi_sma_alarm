@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>자동매매 전략 (종목 선택 가능)</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 20px; }
+        h1 { color: #1a73e8; }
+        form { margin-bottom: 20px; }
+        label { margin-right: 10px; }
+        input { padding: 5px; margin-right: 10px; }
+        button {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 6px 8px;
+            text-align: center;
+        }
+        th {
+            background-color: #f4f4f4;
+        }
+    </style>
+</head>
+<body>
+    <h1>RSI + MA 자동매매 전략</h1>
+    <form method="POST">
+        <label>종목 코드 (예: 064350.KQ)</label>
+        <input type="text" name="symbol" value="{{ symbol }}">
+        <label>시작일</label>
+        <input type="date" name="start_date" value="{{ start_date }}">
+        <label>종료일</label>
+        <input type="date" name="end_date" value="{{ end_date }}">
+        <button type="submit">실행</button>
+    </form>
+
+    {% if chart_html %}
+        {{ chart_html | safe }}
+    {% endif %}
+
+    {% if trades %}
+        <h2>거래 결과</h2>
+        <table>
+            <tr>
+                <th>매수일</th>
+                <th>매수가</th>
+                <th>매도일</th>
+                <th>매도가</th>
+                <th>수익률 (%)</th>
+            </tr>
+            {% for row in trades %}
+            <tr>
+                <td>{{ row["Buy Date"] }}</td>
+                <td>{{ row["Buy Price"] }}</td>
+                <td>{{ row["Sell Date"] }}</td>
+                <td>{{ row["Sell Price"] }}</td>
+                <td>{{ row["Return (%)"] }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    {% endif %}
+</body>
+</html>
