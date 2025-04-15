@@ -1,54 +1,42 @@
-# autotrade.py
-import os
-import pandas as pd
-from modules.strategy import run_strategy
-from modules.telegram_alert import send_telegram_message
+name: 🔄 Backtest Executor
 
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
-def format_trade_results(trades_df):
-    if trades_df.empty:
-        return "❌ 거래 내역 없음"
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
 
-    messages = []
-    total_profit = 0
-    for idx, row in trades_df.iterrows():
-        buy_date = row['Buy Date'].strftime("%Y-%m-%d") if pd.notna(row['Buy Date']) else '-'
-        sell_date = row['Sell Date'].strftime("%Y-%m-%d") if pd.notna(row['Sell Date']) else '-'
-        profit = row['Return (%)'] if pd.notna(row['Return (%)']) else 0
-        total_profit += profit if isinstance(profit, (int, float)) else 0
+    steps:
+      - name: 📦 리포지토리 체크아웃
+        uses: actions/checkout@v3
 
-        messages.append(f"📅 {buy_date} ➕ {sell_date} | 수익률: {profit:.2f}%")
+      - name: 🐍 Python 설치
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
 
-    avg_profit = total_profit / len(trades_df)
-    summary = f"✅ 총 거래: {len(trades_df)}회 | 평균 수익률: {avg_profit:.2f}%"
-    return "\n".join(messages + ["", summary])
+      - name: 📦 의존성 설치
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
+      - name: 🔐 환경 변수 설정
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SEND_ALERT: ${{ secrets.SEND_ALERT }}
+        run: |
+          echo "TELEGRAM_TOKEN=$TELEGRAM_TOKEN" >> .env
+          echo "TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID" >> .env
+          echo "SEND_ALERT=$SEND_ALERT" >> .env
 
-def main():
-    symbol = "042700.KQ"
-    start_date = "2023-01-01"
-    end_date = "2025-04-15"
-
-    print("[************ 전략 실행 시작 ************]")
-    print(f"🌐 {symbol}: {start_date} ~ {end_date}")
-
-    df, trades_df = run_strategy(symbol, start_date, end_date, backtest=True)
-
-    print("\n✅ 전략 처리 완료.\n")
-    print(trades_df[['Buy Date', 'Buy Price', 'Sell Date', 'Sell Price', 'Return (%)']])
-
-    if os.getenv("SEND_ALERT", "True") == "True":
-        TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-        TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-        msg = f"✨ 백테스트 결과 [{symbol}]\n{format_trade_results(trades_df)}"
-        send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, msg)
-
-
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--backtest", action="store_true", help="백테스트 실행 여부")
-    args = parser.parse_args()
-
-    if args.backtest:
-        main()
+      - name: 🤖 Run Backtest
+        run: python autotrade.py --backtest
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SEND_ALERT: ${{ secrets.SEND_ALERT }}
