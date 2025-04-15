@@ -49,3 +49,7 @@ jobs:
 
     - name: 🤖 자동매매 실행
       run: python autotrade.py
+      env:
+        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        SEND_ALERT: ${{ secrets.SEND_ALERT }}
