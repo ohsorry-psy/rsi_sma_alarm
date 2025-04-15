@@ -24,7 +24,7 @@ def format_trade_results(trades_df):
 
     avg_profit = total_profit / len(trades_df)
     summary = f"\n✅ 총 거래: {len(trades_df)}회 | 평균 수익률: {avg_profit:.2f}%"
-    return "\n".join(messages) + summary
+    return "\n".join(messages + [summary])
 
 # 한미반도체 예시 (042700.KQ)
 symbol = "042700.KQ"
