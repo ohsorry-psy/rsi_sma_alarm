@@ -9,6 +9,9 @@ on:
 jobs:
   backtest:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./  # 루트 디렉토리 기준
 
     steps:
       - name: 📦 리포지토리 체크아웃
@@ -23,7 +26,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-        working-directory: ./rsi_sma_alarm
 
       - name: 🔐 환경 변수 설정
         env:
@@ -34,7 +36,6 @@ jobs:
           echo "TELEGRAM_TOKEN=$TELEGRAM_TOKEN" >> .env
           echo "TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID" >> .env
           echo "SEND_ALERT=$SEND_ALERT" >> .env
-        working-directory: ./rsi_sma_alarm
 
       - name: 🤖 Run Backtest
         run: python autotrade.py --backtest
@@ -42,4 +43,3 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SEND_ALERT: ${{ secrets.SEND_ALERT }}
-        working-directory: ./rsi_sma_alarm
