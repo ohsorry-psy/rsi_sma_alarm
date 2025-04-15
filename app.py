@@ -2,6 +2,7 @@ from flask import Flask, render_template, request
 import pandas as pd
 import plotly.graph_objects as go
 from modules.strategy import run_strategy
+import os
 
 app = Flask(__name__)
 
@@ -61,5 +62,6 @@ def index():
                            end_date=end_date)
 
 if __name__ == "__main__":
+    debug_mode = os.environ.get("FLASK_DEBUG", "False") == "True"
     print("🚀 Flask 서버 시작됨")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=debug_mode)
