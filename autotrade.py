@@ -30,8 +30,12 @@ def run_strategy(symbol, start_date, end_date, backtest=False):
     df['RSI'] = 100 - (100 / (1 + rs))
 
     # 매수/매도 시점 포착 (RSI 조건 포함)
-    df["Buy"] = (df["MA5"] > df["MA10"]) & (df["MA5"].shift(1) <= df["MA10"].shift(1)) & (df["RSI"] < 40)
-    df["Sell"] = (df["MA5"] < df["MA10"]) & (df["MA5"].shift(1) >= df["MA10"].shift(1))
+    df["Buy"] = ((df["MA5"] > df["MA10"]) &
+                  (df["MA5"].shift(1) <= df["MA10"].shift(1)) &
+                  (df["RSI"] < 40)).astype(bool)
+
+    df["Sell"] = ((df["MA5"] < df["MA10"]) &
+                   (df["MA5"].shift(1) >= df["MA10"].shift(1))).astype(bool)
 
     print("▶ 전략 처리 시작")
     trades = []
@@ -40,8 +44,8 @@ def run_strategy(symbol, start_date, end_date, backtest=False):
     buy_date = None
 
     for date, row in df.iterrows():
-        buy_signal = bool(row["Buy"]) if pd.notnull(row["Buy"]) and not isinstance(row["Buy"], pd.Series) else False
-        sell_signal = bool(row["Sell"]) if pd.notnull(row["Sell"]) and not isinstance(row["Sell"], pd.Series) else False
+        buy_signal = bool(row["Buy"]) if isinstance(row["Buy"], (bool, int, float)) else False
+        sell_signal = bool(row["Sell"]) if isinstance(row["Sell"], (bool, int, float)) else False
 
         if not holding and buy_signal:
             buy_price = row["Close"]
@@ -87,11 +91,11 @@ if __name__ == '__main__':
     parser.add_argument('--backtest', action='store_true', help='백테스트 실행 여부')
     args = parser.parse_args()
 
-    symbol = "005930.KS"
+    symbol = "066970.KQ"
     start_date = "2024-03-01"
     end_date = datetime.today().strftime("%Y-%m-%d")
 
-    print(f"⏱ 자동 전력 실행 시작: {symbol} ({start_date} ~ {end_date})")
+    print(f"⏱ 자동 전략 실행 시작: {symbol} ({start_date} ~ {end_date})")
     df, trades_df = run_strategy(symbol, start_date, end_date, backtest=args.backtest)
 
     if not trades_df.empty:
