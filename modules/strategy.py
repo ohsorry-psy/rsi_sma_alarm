@@ -3,8 +3,9 @@ import pandas as pd
 import os
 from dotenv import load_dotenv
 from modules.telegram_alert import send_telegram_message
+from datetime import datetime
 
-# 🔐 환경 변수 로드
+# 해금 변수 로드
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -29,8 +30,12 @@ def run_strategy(symbol, start_date, end_date, backtest=False):
     df['RSI'] = 100 - (100 / (1 + rs))
 
     # 매수/매도 시점 포착 (RSI 조건 포함)
-    df["Buy"] = (df["MA5"] > df["MA10"]) & (df["MA5"].shift(1) <= df["MA10"].shift(1)) & (df["RSI"] < 40)
-    df["Sell"] = (df["MA5"] < df["MA10"]) & (df["MA5"].shift(1) >= df["MA10"].shift(1))
+    df["Buy"] = ((df["MA5"] > df["MA10"]) &
+                  (df["MA5"].shift(1) <= df["MA10"].shift(1)) &
+                  (df["RSI"] < 40)).astype(bool)
+
+    df["Sell"] = ((df["MA5"] < df["MA10"]) &
+                   (df["MA5"].shift(1) >= df["MA10"].shift(1))).astype(bool)
 
     print("▶ 전략 처리 시작")
     trades = []
@@ -39,8 +44,8 @@ def run_strategy(symbol, start_date, end_date, backtest=False):
     buy_date = None
 
     for date, row in df.iterrows():
-        buy_signal = bool(row["Buy"]) if pd.notnull(row["Buy"]) and not isinstance(row["Buy"], pd.Series) else False
-        sell_signal = bool(row["Sell"]) if pd.notnull(row["Sell"]) and not isinstance(row["Sell"], pd.Series) else False
+        buy_signal = bool(row["Buy"]) if isinstance(row["Buy"], (bool, int, float)) else False
+        sell_signal = bool(row["Sell"]) if isinstance(row["Sell"], (bool, int, float)) else False
 
         if not holding and buy_signal:
             buy_price = row["Close"]
@@ -60,7 +65,6 @@ def run_strategy(symbol, start_date, end_date, backtest=False):
                 send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, msg)
 
         elif holding and sell_signal:
-            # 최소 2일 보유 조건 체크
             if (date - buy_date).days >= 2:
                 sell_price = row["Close"]
                 trades[-1]["Sell Date"] = date
@@ -80,3 +84,30 @@ def run_strategy(symbol, start_date, end_date, backtest=False):
     trades_df = pd.DataFrame(trades)
     print("✅ 전략 처리 완료")
     return df, trades_df
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--backtest', action='store_true', help='백테스트 실행 여부')
+    args = parser.parse_args()
+
+    symbol = "TQQQ"
+    start_date = "2024-03-01"
+    end_date = datetime.today().strftime("%Y-%m-%d")
+
+    print(f"⏱ 자동 전략 실행 시작: {symbol} ({start_date} ~ {end_date})")
+    df, trades_df = run_strategy(symbol, start_date, end_date, backtest=args.backtest)
+
+    if not trades_df.empty:
+        print(trades_df[["Buy Date", "Buy Price", "Sell Date", "Sell Price", "Return (%)"]])
+    else:
+        print("⚠️ 거래 내역이 없습니다.")
+
+    if args.backtest and SEND_ALERT:
+        if trades_df.empty:
+            send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, f"✅ 자동 실행 완료: {symbol}\n📉 거래 내역 없음")
+        else:
+            total_profit = trades_df["Return (%)"].dropna().sum()
+            avg_profit = trades_df["Return (%)"].dropna().mean()
+            summary = f"✅ 자동 실행 완료: {symbol}\n📊 총 거래: {len(trades_df)}회 | 평균 수익률: {avg_profit:.2f}%"
+            send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, summary)

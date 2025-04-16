@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from modules.telegram_alert import send_telegram_message
 from datetime import datetime
 
-# 🔐 환경 변수 로드
+# 해금 변수 로드
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -29,10 +29,10 @@ def run_strategy(symbol, start_date, end_date, backtest=False):
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
 
-    # 매수/매도 시점 포착 (RSI 조건 포함)
+    # 매수/매도 시점 포착 (RSI 조건 포함, 완화)
     df["Buy"] = ((df["MA5"] > df["MA10"]) &
                   (df["MA5"].shift(1) <= df["MA10"].shift(1)) &
-                  (df["RSI"] < 40)).astype(bool)
+                  (df["RSI"] < 50)).astype(bool)
 
     df["Sell"] = ((df["MA5"] < df["MA10"]) &
                    (df["MA5"].shift(1) >= df["MA10"].shift(1))).astype(bool)
@@ -91,7 +91,7 @@ if __name__ == '__main__':
     parser.add_argument('--backtest', action='store_true', help='백테스트 실행 여부')
     args = parser.parse_args()
 
-    symbol = "066970.KQ"
+    symbol = "TQQQ"
     start_date = "2024-03-01"
     end_date = datetime.today().strftime("%Y-%m-%d")
 
