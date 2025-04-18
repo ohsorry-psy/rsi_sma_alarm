@@ -1,0 +1,16 @@
+services:
+  - type: worker          # ✅ web → worker
+    name: rsi-sma-trader-backtest
+    env: python
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python autotrade.py --backtest
+    autoDeploy: true
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: true
+      - key: TELEGRAM_CHAT_ID
+        sync: true
+      - key: SEND_ALERT
+        value: "True"
