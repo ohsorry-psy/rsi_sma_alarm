@@ -6,6 +6,7 @@ from modules.telegram_alert import send_telegram_message
 from datetime import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots  # ✅ subplot 추가
+import argparse  # ✅ argparse 추가
 
 # 🔐 환경 변수 로드
 load_dotenv()
@@ -122,14 +123,16 @@ def run_strategy(symbol, start_date, end_date, backtest=False):
     return df, trades_df
 
 if __name__ == '__main__':
-    import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--backtest', action='store_true', help='백테스트 실행 유무')
+    parser.add_argument('--symbol', type=str, default="005930.KS", help='종목 코드')  # ✅ 추가
+    parser.add_argument('--start', type=str, default="2024-03-01", help='시작일')    # ✅ 추가
+    parser.add_argument('--end', type=str, default=datetime.today().strftime("%Y-%m-%d"), help='종료일')  # ✅ 추가
     args = parser.parse_args()
 
-    symbol = "005930.KS"
-    start_date = "2024-03-01"
-    end_date = datetime.today().strftime("%Y-%m-%d")
+    symbol = args.symbol
+    start_date = args.start
+    end_date = args.end
 
     print(f"⏱ 자동 전략 실행 시작: {symbol} ({start_date} ~ {end_date})")
     df, trades_df = run_strategy(symbol, start_date, end_date, backtest=args.backtest)

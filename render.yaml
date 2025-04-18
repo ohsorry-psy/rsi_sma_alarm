@@ -1,6 +1,6 @@
 services:
-  - type: worker          # ✅ web → worker
-    name: rsi-sma-trader-backtest
+  - type: worker  # ✅ 웹에서 worker로 변경
+    name: rsi-sma-trader-bot
     env: python
     plan: free
     branch: main
