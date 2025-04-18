@@ -1,11 +1,11 @@
 services:
   - type: web
-    name: rsi-sma-trader-backtest
+    name: rsi-sma-trader-app
     env: python
     plan: free
     branch: main
     buildCommand: pip install -r requirements.txt
-    startCommand: python autotrade.py --backtest  # ✅ gunicorn 제거!
+    startCommand: gunicorn app:app  # ✅ Render용 WSGI 실행 진입점
     autoDeploy: true
     envVars:
       - key: TELEGRAM_TOKEN
