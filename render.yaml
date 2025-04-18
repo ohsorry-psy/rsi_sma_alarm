@@ -1,11 +1,11 @@
 services:
-  - type: worker  # ✅ 웹에서 worker로 변경
-    name: rsi-sma-trader-bot
+  - type: web
+    name: rsi-sma-trader-backtest
     env: python
     plan: free
     branch: main
     buildCommand: pip install -r requirements.txt
-    startCommand: python autotrade.py --backtest
+    startCommand: python autotrade.py --backtest  # ✅ gunicorn 제거!
     autoDeploy: true
     envVars:
       - key: TELEGRAM_TOKEN
@@ -14,3 +14,4 @@ services:
         sync: true
       - key: SEND_ALERT
         value: "True"
+
