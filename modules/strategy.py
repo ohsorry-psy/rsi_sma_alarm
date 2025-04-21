@@ -1,32 +1,95 @@
-# autotrade.py
-import yfinance as yf
 import pandas as pd
+import yfinance as yf
+import datetime
 import os
-from dotenv import load_dotenv
 from modules.telegram_alert import send_telegram_message
-from datetime import datetime
-import argparse
+from dotenv import load_dotenv
+# ✅ .env.local을 우선적으로 로드
 
-# 🔐 환경 변수 로드
-load_dotenv()
+# ✅ 환경 변수 로드
+load_dotenv(dotenv_path=".env.local")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 SEND_ALERT = os.getenv("SEND_ALERT", "False") == "True"
 
-def run_strategy(symbol, start_date, end_date, backtest=False):
+def run_strategy(symbol, start_date, end_date, mode="backtest"):
     print("▶ 데이터 다운로드 시작")
-    df = yf.download(symbol, start=start_date, end=end_date)
+    df = yf.download(symbol, start=start_date, end=end_date, group_by='ticker')
     print("✅ 데이터 다운로드 완료")
 
-    # 이동 평균선 계산
+    # ✅ 다중 컬럼 방지: 단일 종목의 경우 열 이름 평탄화
+    if isinstance(df.columns, pd.MultiIndex):
+        df = df[symbol]  # 👉 'Close', 'Open', ... 만 남도록
+
+    print("✅ 컬럼 목록:", df.columns.tolist())
+
+    # 🔍 이동 평균 및 RSI 계산
+    if "Close" not in df.columns or "Open" not in df.columns:
+        raise KeyError("❌ 'Close' 또는 'Open' 컬럼이 존재하지 않습니다. 다운로드된 데이터 확인 필요")
+
     df["MA5"] = df["Close"].rolling(window=5).mean()
     df["MA10"] = df["Close"].rolling(window=10).mean()
 
-    # 매수/매도 시점 포착
-    df["Buy"] = (df["MA5"] > df["MA10"]) & (df["MA5"].shift(1) <= df["MA10"].shift(1))
-    df["Sell"] = (df["MA5"] < df["MA10"]) & (df["MA5"].shift(1) >= df["MA10"].shift(1))
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
 
-    print("▶ 전략 처리 시작")
+    # 🔍 전일 시가/종가 저장 및 양봉 전환 캔들 조건 계산
+    df["Prev Close"] = df["Close"].shift(1)
+    df["Prev Open"] = df["Open"].shift(1)
+
+    # ✅ Series로 명시적으로 변환하여 오류 방지
+    df["Close"] = df["Close"].astype(float)
+    df["Open"] = df["Open"].astype(float)
+    df["Prev Close"] = df["Prev Close"].astype(float)
+    df["Prev Open"] = df["Prev Open"].astype(float)
+
+    bullish_condition = ((df["Close"] > df["Open"]) & (df["Prev Close"] < df["Prev Open"])).astype(bool)
+    print("✅ bullish_condition shape:", bullish_condition.shape)
+    print("📊 bullish_condition head:")
+    print(bullish_condition.head())
+    df["Bullish Candle"] = bullish_condition
+
+    print("\n📊 df.head():")
+    print(df.head())
+    print("\n📊 Bullish Candle head:")
+    print(df["Bullish Candle"].head())
+
+    # 🟢 매수 조건: MA 교차 + RSI < 60 + 양봉 전환
+    df["Buy"] = (
+        (df["MA5"] > df["MA10"]) &
+        (df["MA5"].shift(1) <= df["MA10"].shift(1)) &
+        (df["RSI"] < 60) &
+        (df["Bullish Candle"])
+    ).astype(bool)
+
+    # 🔴 매도 조건: MA 역교차
+    df["Sell"] = (
+        (df["MA5"] < df["MA10"]) &
+        (df["MA5"].shift(1) >= df["MA10"].shift(1))
+    ).astype(bool)
+
+    if mode == "live":
+        latest = df.iloc[-1]
+        msg = ""
+        if latest["Buy"]:
+            msg = f"📈 실시간 매수 시그널: {symbol} @ {latest.name.date()} / 진입가: {latest['Close']:.2f}"
+        elif latest["Sell"]:
+            msg = f"📉 실시간 매도 시그널: {symbol} @ {latest.name.date()} / 청산가: {latest['Close']:.2f}"
+        else:
+            msg = f"⏹️ 실시간 조건 불충분: {symbol} @ {latest.name.date()} / 조건 미충족"
+
+        print(msg)
+
+        if SEND_ALERT:
+            print(f"🚀 텔레그램 전송 시도 중: {msg}")
+            send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, msg)
+
+        return df, pd.DataFrame()  # 👉 실시간 모드에서는 trades_df 반환 없음
+
+    # ✅ 백테스트 처리
     trades = []
     holding = False
     buy_price = 0
@@ -37,67 +100,31 @@ def run_strategy(symbol, start_date, end_date, backtest=False):
 
         if not holding and buy_signal:
             buy_price = row["Close"]
-            trade = {
+            trades.append({
                 "Buy Date": date,
                 "Buy Price": buy_price,
                 "Sell Date": pd.NaT,
                 "Sell Price": None,
                 "Return (%)": None
-            }
-            trades.append(trade)
+            })
             holding = True
 
             if SEND_ALERT:
-                msg = f"\U0001F4C8 매수 신호 감지! [{symbol}] {date.date()} / 진입가: {buy_price:.2f}원"
+                msg = f"🟢 백테스트 매수: {symbol} @ {date.date()} / 진입가: {buy_price:.2f}"
+                print(f"🚀 텔레그램 전송 시도 중: {msg}")
                 send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, msg)
 
         elif holding and sell_signal:
             sell_price = row["Close"]
             trades[-1]["Sell Date"] = date
             trades[-1]["Sell Price"] = sell_price
-            return_pct = ((sell_price - buy_price) / buy_price) * 100
-            trades[-1]["Return (%)"] = return_pct
+            trades[-1]["Return (%)"] = ((sell_price - buy_price) / buy_price) * 100
             holding = False
 
             if SEND_ALERT:
-                msg = f"\U0001F4C9 매도 완료! [{symbol}] {date.date()} / 매도가: {sell_price:.2f}원 / 수익률: {return_pct:.2f}%"
+                msg = f"🔴 백테스트 매도: {symbol} @ {date.date()} / 청산가: {sell_price:.2f}"
+                print(f"🚀 텔레그램 전송 시도 중: {msg}")
                 send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, msg)
 
-                if return_pct >= 10:
-                    send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID,
-                        f"\U0001F3AF 목표 수익률 도달! +{return_pct:.2f}% 수익")
-
     trades_df = pd.DataFrame(trades)
-    print("✅ 전략 처리 완료")
     return df, trades_df
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--mode', type=str, default='live', help="실행 모드: 'live' 또는 'backtest'")
-    parser.add_argument('--symbol', type=str, default='005930.KS')
-    parser.add_argument('--start', type=str, default='2024-03-01')
-    parser.add_argument('--end', type=str, default=datetime.today().strftime("%Y-%m-%d"))
-    args = parser.parse_args()
-
-    print(f"⏱ 자동 전략 실행 시작: {args.symbol} ({args.start} ~ {args.end})")
-    print(f"✅ 실행 모드: {args.mode}")
-
-    backtest_flag = args.mode == 'backtest'
-    df, trades_df = run_strategy(args.symbol, args.start, args.end, backtest=backtest_flag)
-
-    if not trades_df.empty:
-        print(trades_df[["Buy Date", "Buy Price", "Sell Date", "Sell Price", "Return (%)"]])
-    else:
-        print("⚠️ 거래 내역이 없습니다.")
-
-    if backtest_flag and SEND_ALERT:
-        if trades_df.empty:
-            send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID,
-                                  f"✅ 백테스트 완료: {args.symbol}\n📉 거래 내역 없음")
-        else:
-            total_profit = trades_df["Return (%)"].dropna().sum()
-            avg_profit = trades_df["Return (%)"].dropna().mean()
-            summary = f"✅ 백테스트 완료: {args.symbol}\n📊 총 거래: {len(trades_df)}회 | 평균 수익률: {avg_profit:.2f}%"
-            send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, summary)
-
-
